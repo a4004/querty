@@ -87,6 +87,72 @@ export class ZeroZero extends QuertyPluginBase {
     }
 
     /**
+     * Converts an integer into a number string constructed from Discord emoji.
+     * @param integer Number
+     * @returns Discord emoji string contianing the number.
+     */
+    toEmojiNumber(integer: number): string {
+        const numbers = [":zero:", ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":eight:", ":nine:"];
+        let result: string = "";
+        let string_number = integer.toString();
+        let i = 0;
+
+        for (i; i < string_number.length; i++) {
+            result = result.concat(numbers[Number(string_number[i])]);
+        }
+        
+        return result;
+    }
+
+    /**
+     * Updates zerozero database with new user data.
+     * @param d_points Points added (if removed use negative number)
+     * @param d_misses Misses added
+     * @param d_cooldown Cooldowns added
+     * @param d_history History entry added (if none, set to null)
+     * @param d_cwon Challenges won added
+     * @param d_clost Challenges lost added
+     * @param d_cstale Challenges staled added
+     */
+    updateUserData(guild_id: string, user_id: string, d_points: number, d_misses: number, d_cooldown: number, d_history: string | null,
+         d_cwon: number, d_clost: number, d_cstale: number): void {
+            this.createBackupStore();
+            zerozero.guilds.forEach(guild => {
+                if (guild.guild_id != guild_id) return;
+                if (guild.bucket.data.findIndex(user => user.user_id === user_id) == -1) {
+                    guild.bucket.data.push(
+                        {
+                            user_id: user_id,
+                            points: d_points,
+                            misses: d_misses,
+                            cooldown: d_cooldown,
+                            history: [d_history ?? "Never"],
+                            challenges: {
+                                won: d_cwon,
+                                lost: d_clost,
+                                stale: d_cstale
+                            }
+                        }
+                    );
+                } else {
+                    guild.bucket.data.forEach(user => {
+                        if (user.user_id != user_id) return;
+                        user.points += d_points;
+                        user.misses += d_misses;
+                        user.cooldown += d_cooldown;
+                        if (d_history != null)
+                            user.history.push(d_history);
+                        user.challenges.won += d_cwon;
+                        user.challenges.lost += d_clost;
+                        user.challenges.stale += d_cstale;
+                    });
+                }
+                guild.bucket.data.sort(this.rankElementsFunction);
+            });
+            this.saveCurrentStore();
+    }
+
+    /**
      * Button response handler.
      */
     async counterDisputeButtonResponse(interaction: ButtonInteraction): Promise<void> {
@@ -116,21 +182,8 @@ export class ZeroZero extends QuertyPluginBase {
                 `The defendant, <@${defendant_user.id}> has pleaded guilty so has been deducted 1 point but NO compensation will be awarded to the claimant.`,
                 "00:00 by Querty OSS")]} );
             this.dispute_lock = false;
-            this.createBackupStore();
-            zerozero.guilds.forEach(guild => {
-                if (guild.guild_id != interaction.guildId) {
-                    return;
-                }
-                guild.bucket.last_winner = "";
-                guild.bucket.data.forEach(user => {
-                    if (user.user_id != defendant_user.id) {
-                        return;
-                    }
-                    user.points -= 1;
-                    user.challenges.lost += 1;
-                });
-            });
-            this.saveCurrentStore();
+
+            this.updateUserData(interaction.guildId as string, this.defendant, -1, 0, 0, null, 0, 1, 0);
             return;
         } 
 
@@ -189,27 +242,21 @@ export class ZeroZero extends QuertyPluginBase {
                     await interaction.channel.send( { embeds: [this.ddal.createEmbed(COLOUR_NEGATIVE, `:crossed_swords: **${claimant_user.username}** has won the dispute!`,
                     `The defendant, <@${this.defendant}> has not responded to the dispute so has been deducted 1 point and has incurred a 3-night cooldown but NO compensation will be awarded to the claimant. `,
                     "00:00 by Querty OSS")]} );
-                this.dispute_lock = false;
-                zerozero.guilds.forEach(guild => {
-                    if (guild.guild_id != interaction.guildId) {
-                        return;
-                    }
-                    guild.bucket.last_winner = "";
-                    guild.bucket.data.forEach(user => {
-                        if (user.user_id != defendant_user.id) {
-                            return;
-                        }
-                        user.points -= 1;
-                        user.challenges.lost += 1;
-                        user.cooldown += 3;
-                        setTimeout(() => {
-                            user.cooldown -= 1;
-                        }, 86400000); 
-                    });
-                });
+                    this.dispute_lock = false;
+
+                    this.updateUserData(interaction.guildId as string, this.defendant, -1, 0, 3, null, 0, 1, 0);
+                    setTimeout(() => {
+                        this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, -1, null, 0, 0, 0);
+                    }, 86400000); 
+                    setTimeout(() => {
+                        this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, -1, null, 0, 0, 0);
+                    }, 172800000); 
+                    setTimeout(() => {
+                        this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, -1, null, 0, 0, 0);
+                    }, 259200000); 
                 }
-                return;
             }, 300000);
+
         } else if (interaction.customId == "dispute_modal") {
             this.counter_claim = interaction.fields.getTextInputValue("dispute_reason");
             let claimant_user = await this.dclient.users.fetch(this.claimant);
@@ -256,133 +303,47 @@ export class ZeroZero extends QuertyPluginBase {
                         embed.setColor(COLOUR_NEGATIVE);
                         embed.setTitle(`:crossed_swords: **${claimant_user.username}** has won the dispute!`);
                         embed.setDescription(`The defendant, <@${defendant_user.id}> has lost the dispute and has been deducted 1 point alongside a cooldown of 3 nights. The claimant has been compensated.`);
-                        zerozero.guilds.forEach(guild => {
-                            if (guild.guild_id != interaction.guildId) {
-                                return;
-                            }
-                            guild.bucket.last_winner = "";
-                            guild.bucket.data.forEach(user => {
-                                if (user.user_id != defendant_user.id) {
-                                    return;
-                                }
-                                user.points -= 1;
-                                user.challenges.lost += 1;
-                                user.cooldown += 3;
-                                setTimeout(() => {
-                                    user.cooldown -= 1;
-                                }, 86400000); 
-                            });
-                            if (guild.bucket.data.findIndex(user => user.user_id == claimant_user.id) == -1) {
-                                guild.bucket.data.push( {
-                                    user_id: claimant_user.id,
-                                    points: 1,
-                                    misses: 0,
-                                    cooldown: 0,
-                                    history: [],
-                                    challenges: {
-                                        won: 1,
-                                        lost: 0,
-                                        stale: 0
-                                    }
-                                });
-                            } else {
-                                guild.bucket.data.forEach(user => {
-                                    if (user.user_id != claimant_user.id) {
-                                        return;
-                                    }
-                                    user.points += 1;
-                                    user.challenges.won += 1;
-                                });
-                            }
-                        });
+                        
+                        this.updateUserData(interaction.guildId as string, this.defendant, -1, 0, 3, null, 0, 1, 0);
+
+                        setTimeout(() => {
+                            this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, -1, null, 0, 0, 0);
+                        }, 86400000); 
+                        setTimeout(() => {
+                            this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, -1, null, 0, 0, 0);
+                        }, 172800000); 
+                        setTimeout(() => {
+                            this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, -1, null, 0, 0, 0);
+                        }, 259200000); 
+
+                        this.updateUserData(interaction.guildId as string, this.claimant, 1, 0, 0, null, 1, 0, 0);
+                
                     } else if (claim < defend) {
                         embed.setColor(COLOUR_POSITIVE);
                         embed.setTitle(`:shield: **${defendant_user.username}** has won the dispute!`);
                         embed.setDescription(`The claimant, <@${claimant_user.id}> has lost the dispute and has been deducted 1 point alongside a cooldown of 3 nights. The defendant will be compensated.`);
-                        zerozero.guilds.forEach(guild => {
-                            if (guild.guild_id != interaction.guildId) {
-                                return;
-                            }
-                            guild.bucket.last_winner = "";
-                            guild.bucket.data.forEach(user => {
-                                if (user.user_id != defendant_user.id) {
-                                    return;
-                                }
-                                user.points += 1;
-                                user.challenges.won += 1;
-                            });
-                            if (guild.bucket.data.findIndex(user => user.user_id == claimant_user.id) == -1) {
-                                guild.bucket.data.push( {
-                                    user_id: claimant_user.id,
-                                    points: -1,
-                                    misses: 0,
-                                    cooldown: 3,
-                                    history: [],
-                                    challenges: {
-                                        won: 0,
-                                        lost: 1,
-                                        stale: 0
-                                    }
-                                });
-                                guild.bucket.data.forEach(user => {
-                                    if (user.user_id != claimant_user.id) {
-                                        return;
-                                    }
-                                    setTimeout(() => {
-                                        user.cooldown -= 1;
-                                    }, 86400000); 
-                                });
-                            } else {
-                                guild.bucket.data.forEach(user => {
-                                    if (user.user_id != claimant_user.id) {
-                                        return;
-                                    }
-                                    user.points -= 1;
-                                    user.cooldown += 3;
-                                    user.challenges.lost += 1;
-                                    setTimeout(() => {
-                                        user.cooldown -= 1;
-                                    }, 86400000); 
-                                });
-                            }
-                        });
+                       
+                        this.updateUserData(interaction.guildId as string, this.claimant, -1, 0, 3, null, 0, 1, 0);
+
+                        setTimeout(() => {
+                            this.updateUserData(interaction.guildId as string, this.claimant, 0, 0, -1, null, 0, 0, 0);
+                        }, 86400000); 
+                        setTimeout(() => {
+                            this.updateUserData(interaction.guildId as string, this.claimant, 0, 0, -1, null, 0, 0, 0);
+                        }, 172800000); 
+                        setTimeout(() => {
+                            this.updateUserData(interaction.guildId as string, this.claimant, 0, 0, -1, null, 0, 0, 0);
+                        }, 259200000); 
+
+                        this.updateUserData(interaction.guildId as string, this.defendant, 1, 0, 0, null, 1, 0, 0);
+                    
                     } else {
                         embed.setColor(COLOUR_SECONDARY);
                         embed.setTitle(`:bread: Vote is stale!`);
                         embed.setDescription("A verdict could not be decided so the case is dismissed. The defendant does not incur any penalties nor is the claimant compensated.");
-                        zerozero.guilds.forEach(guild => {
-                            if (guild.guild_id != interaction.guildId) {
-                                return;
-                            }
-                            guild.bucket.last_winner = "";
-                            guild.bucket.data.forEach(user => {
-                                if (user.user_id != defendant_user.id) {
-                                    return;
-                                }
-                                user.challenges.stale += 1;
-                            });
-                            if (guild.bucket.data.findIndex(user => user.user_id == claimant_user.id) == -1) {
-                                guild.bucket.data.push( {
-                                    user_id: claimant_user.id,
-                                    points: 0,
-                                    misses: 0,
-                                    cooldown: 0,
-                                    history: [],
-                                    challenges: {
-                                        won: 0,
-                                        lost: 0,
-                                        stale: 1
-                                    }
-                                });
-                            } else {
-                                guild.bucket.data.forEach(user => {
-                                    if (user.user_id != claimant_user.id) {
-                                        return;
-                                    }
-                                    user.challenges.stale += 1;
-                                });
-                            }
-                        });
+                       
+                        this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, 0, null, 0, 0, 1);
+                        this.updateUserData(interaction.guildId as string, this.claimant, 0, 0, 0, null, 0, 0, 1);
                     }
 
                     await message.reply( {embeds: [embed]});
@@ -550,7 +511,7 @@ export class ZeroZero extends QuertyPluginBase {
 
                 let index = guild.bucket.data.findIndex(item => item.user_id == member.id);
                 if (index > 4) {
-                    embed.addField("Rank", `**${index + 1}**`);
+                    embed.addField("Rank", this.toEmojiNumber(index + 1));
                 } else {
                     embed.addField("Rank", rankings[index]);
                 }
@@ -650,7 +611,6 @@ export class ZeroZero extends QuertyPluginBase {
                     this.debug.Log(this.pluginName, `No "00:00" in message or repeated message by winner. Skipping...`, LogLevel.None);
                     return;
                 }
-                this.createBackupStore();
                 let user = guild.bucket.data.find(i => i.user_id == message.author.id);
                 // If the user is timed out.
                 if (user != undefined && user.cooldown > 0) {
@@ -665,25 +625,7 @@ export class ZeroZero extends QuertyPluginBase {
                         this.debug.Log(this.pluginName, `The win was already taken. Replying to the user...`, LogLevel.None);
                         await message.reply({ embeds: [this.ddal.createEmbed(COLOUR_NEGATIVE, ":snail: You we're too slow!",
                             `**${winner.username}** got 00:00 before you. Better luck next time.`, "00:00 by Querty OSS")] } );
-                        if (user == undefined) {
-                            this.debug.Log(this.pluginName, `User is not in the data store, adding new entry.`, LogLevel.None);
-                            guild.bucket.data.push( {
-                                user_id: message.author.id,
-                                points: 0,
-                                misses: 1,
-                                cooldown: 0,
-                                history: [],
-                                challenges: {
-                                    won: 0,
-                                    lost: 0,
-                                    stale: 0
-                                }
-                            });
-                        } else {
-                            this.debug.Log(this.pluginName, `Updating user entry in data store.`, LogLevel.None);
-                            user.misses += 1;
-                        }
-                        this.saveCurrentStore();
+                        this.updateUserData(guild.guild_id, message.author.id, 0, 1, 0, null, 0, 0, 0);
                     });
                     return;
                 }
@@ -694,26 +636,7 @@ export class ZeroZero extends QuertyPluginBase {
                 guild.bucket.win_taken = true;
                 guild.bucket.last_winner = message.author.id;
                 setTimeout(() => guild.bucket.win_taken = false, 360000);
-                if (user == undefined) {
-                    this.debug.Log(this.pluginName, `User is not in the data store, adding new entry.`, LogLevel.None);
-                    guild.bucket.data.push( {
-                        user_id: message.author.id,
-                        points: 1,
-                        misses: 0,
-                        cooldown: 0,
-                        history: [new Date().toString()],
-                        challenges: {
-                            won: 0,
-                            lost: 0,
-                            stale: 0
-                        }
-                    });
-                } else {
-                    this.debug.Log(this.pluginName, `Updating user entry in data store.`, LogLevel.None);
-                    user.points += 1;
-                    user.history.push(new Date().toString());
-                }
-                this.saveCurrentStore();
+                this.updateUserData(guild.guild_id, message.author.id, 1, 0, 0, new Date().toString(), 0, 0, 0);
             });
         });
     }
