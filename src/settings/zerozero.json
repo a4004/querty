@@ -1,0 +1,27 @@
+{
+    "guilds": [
+        {
+            "guild_id": "xxxxxxxxxxxxxxxxxxx",
+            "guild_name": "\"Example Guild\"",
+            "bucket": {
+                "win_taken": false,
+                "challenge_lock": false,
+                "last_winner": "",
+                "data": [
+                    {
+                        "user_id": "xxxxxxxxxxxxxxxxxxx",
+                        "points": 0,
+                        "misses": 0,
+                        "cooldown": 0,
+                        "history": [""],
+                        "challenges": {
+                            "won": 0,
+                            "lost": 0,
+                            "stale": 0
+                        }
+                    }
+                ]
+            }
+        }
+    ]
+}
