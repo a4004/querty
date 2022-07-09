@@ -3,7 +3,7 @@ Free and open-source all-in-one Discord bot framework with extensive plugin supp
 
 <p>
   <img alt="Build Passing" src="https://img.shields.io/static/v1?label=Build&message=Passing&color=limegreen&style=flat-square&logo=typescript&logoColor=white"/>
-  <img alt="Beta" src="https://img.shields.io/static/v1?label=Latest&message=1.0.1-r1&color=yellow&style=flat-square"/>
+  <img alt="Beta" src="https://img.shields.io/static/v1?label=Latest&message=1.0.1-r2&color=green&style=flat-square"/>
 </p>
 
 <p>
