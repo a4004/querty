@@ -153,6 +153,19 @@ export class ZeroZero extends QuertyPluginBase {
     }
 
     /**
+     * Clears the dispute state by clearing the last winner, preventing subsequent disputes.
+     * @param guildId Guild ID
+     */
+    async clearDispute(guildId: string | null): Promise<void> {
+        zerozero.guilds.forEach(guild => {
+            if (guild.guild_id != guildId) {
+                return;
+            }
+            guild.bucket.last_winner = "";
+        });
+    }
+
+    /**
      * Button response handler.
      */
     async counterDisputeButtonResponse(interaction: ButtonInteraction): Promise<void> {
@@ -182,7 +195,8 @@ export class ZeroZero extends QuertyPluginBase {
                 `The defendant, <@${defendant_user.id}> has pleaded guilty so has been deducted 1 point but NO compensation will be awarded to the claimant.`,
                 "00:00 by Querty OSS")]} );
             this.dispute_lock = false;
-
+            await this.clearDispute(interaction.guildId);
+            
             this.updateUserData(interaction.guildId as string, this.defendant, -1, 0, 0, null, 0, 1, 0);
             return;
         } 
@@ -216,7 +230,7 @@ export class ZeroZero extends QuertyPluginBase {
     
             await interaction.reply( { ephemeral: true, embeds: [this.ddal.createEmbed(COLOUR_INTERACT, ":white_check_mark: Dispute submitted",
                  "The other party will be notified and will be able to make a counter argument before voting begins.", "00:00 by Querty OSS")]});
-    
+            
             let embed = this.ddal.createEmbed(COLOUR_INTERACT, ":scales: Make your counter claim before it's too late!",
                  "If you don't make a counter claim within 5 minutes, the claimant will automatically win.", "00:00 by Querty OSS");
             let row = new MessageActionRow().addComponents(new MessageButton()
@@ -242,7 +256,9 @@ export class ZeroZero extends QuertyPluginBase {
                     await interaction.channel.send( { embeds: [this.ddal.createEmbed(COLOUR_NEGATIVE, `:crossed_swords: **${claimant_user.username}** has won the dispute!`,
                     `The defendant, <@${this.defendant}> has not responded to the dispute so has been deducted 1 point and has incurred a 3-night cooldown but NO compensation will be awarded to the claimant. `,
                     "00:00 by Querty OSS")]} );
+
                     this.dispute_lock = false;
+                    await this.clearDispute(interaction.guildId);
 
                     this.updateUserData(interaction.guildId as string, this.defendant, -1, 0, 3, null, 0, 1, 0);
                     setTimeout(() => {
@@ -345,10 +361,11 @@ export class ZeroZero extends QuertyPluginBase {
                         this.updateUserData(interaction.guildId as string, this.defendant, 0, 0, 0, null, 0, 0, 1);
                         this.updateUserData(interaction.guildId as string, this.claimant, 0, 0, 0, null, 0, 0, 1);
                     }
-
+           
+                    this.dispute_lock = false;
+                    await this.clearDispute(interaction.guildId);
                     await message.reply( {embeds: [embed]});
                     this.saveCurrentStore();
-                    this.dispute_lock = false;
                 }, 60000);
             }              
         }
